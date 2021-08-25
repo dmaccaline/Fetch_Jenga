@@ -236,7 +236,7 @@ int main(int argc, char** argv) {
         ROS_INFO("Published");
         //sleep(15);
 
-        //setup quartenions fpr movement
+        //setup quartenions for movement
         tf::Quaternion q;
         tf::Matrix3x3 m(transform2.getRotation());
         double roll, pitch, yaw;
@@ -269,32 +269,14 @@ int main(int argc, char** argv) {
         visual_tools.prompt("Press 'next' to start moement");
         ROS_INFO("complete, moving down");
         group.execute(movement_plan);
-
-        targetPose.position.x = targetPose.position.x;
-
-        group.setPoseTarget(offset(-.22, targetPose, q));
-        group.plan(movement_plan);
-        visual_tools.prompt("Press 'next' to start moement");
-        ROS_INFO("complete, normalizing");
-        group.execute(movement_plan);
-
+        
         //grasp attempt
         ROS_INFO("complete, gripping attempt");
 
         goal.command.position = 0;
         goal.command.max_effort = 150;
         ac.sendGoal(goal);
-        //wait for the action to return
-        bool finished_before_timeout = ac.waitForResult(ros::Duration(30.0));
-
-        if (finished_before_timeout)
-        {
-            actionlib::SimpleClientGoalState state = ac.getState();
-            ROS_INFO("Action finished: %s",state.toString().c_str());
-        }
-        else
-            ROS_INFO("Action did not finish before the time out.");
-
+        
         //move up
         group.setPoseTarget(targetPose);
 
@@ -303,15 +285,13 @@ int main(int argc, char** argv) {
         ROS_INFO("complete, moving up");
         group.execute(movement_plan);
 
-        //move arm out of way for perception if the arm is to the right side
+        //move arm out of way for perception if the arm is on fetch's right side
         std::vector<double> getCurVals;
         group.getCurrentState()->copyJointGroupPositions(
                 group.getCurrentState()->getRobotModel()->getJointModelGroup(group.getName()), getCurVals);
-
-        ROS_INFO("Orig val %.2lf", getCurVals[1]);
+        
         if(getCurVals[1] < 0){
             ROS_INFO("Arm is in the way of perception, moveing to the left");
-
 
             getCurVals[1] = 0;
             group.setJointValueTarget(getCurVals);
