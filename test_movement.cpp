@@ -87,6 +87,9 @@ int main(int argc, char** argv) {
     ros::AsyncSpinner spinner(1);
     spinner.start();
 
+    ROS_INFO("STARTING V2.4");
+    sleep(2);
+
     ros::Subscriber sub;
     ros::Publisher pub = nh.advertise<sensor_msgs::PointCloud2> ("/rh/points_for_moveit_octomap", 100);
     //pub 2/3 used for testing
@@ -314,7 +317,7 @@ int main(int argc, char** argv) {
             group.setJointValueTarget(getCurVals);
 
             group.plan(movement_plan);
-            //                visual_tools.prompt("Press 'next' to begin arm movement");
+            visual_tools.prompt("Press 'next' to begin arm movement");
             group.execute(movement_plan);
         }
 
@@ -349,28 +352,15 @@ int main(int argc, char** argv) {
         sleep(2);
         tf::Quaternion g;
         geometry_msgs::Pose dropLocation;
-/*
-        try {
-            listener.waitForTransform("/base_link", "/head_camera_depth_optical_frame", ros::Time(0),
-                                      ros::Duration(10.0));
-            listener.lookupTransform("/base_link", "/head_camera_depth_optical_frame", ros::Time(0), transform3);
-        }
-        catch (tf::TransformException &ex) {
-            ROS_ERROR("Failed to find transform betwenn /head_camera_depth_optical_frame and /base_link: %s",
-                      ex.what());
-        }*/
 
         //select stack type
         //setDefaultDrop(run, transform2.getOrigin().z() + .18, &g, &dropLocation);
         //stackDropLocation(run, transform2.getOrigin().z() + .18, &g, &dropLocation);
         //stackDropLocationOffset(run, transform2.getOrigin().z() + .18, &g, &dropLocation);
         //stackDropLocation(run, .81 + .18, &g, &dropLocation);
-        //crop field for octomap
 
-       // tf::TransformListener listener;
-
-        //defaultDropPerception(&g, &dropLocation);
-        stackDropPerception(&g, &dropLocation, transform2.getOrigin().z() + .18);
+        defaultDropPerception(&g, &dropLocation);
+        //stackDropPerception(&g, &dropLocation, transform2.getOrigin().z() + .18);
 
 
         group.setPoseTarget(offset(.1, dropLocation, g));
@@ -641,7 +631,7 @@ void defaultDropPerception(tf::Quaternion* g, geometry_msgs::Pose* dropLocation)
 
     std::vector<pcl::PointIndices> cluster_indices;
     pcl::EuclideanClusterExtraction<pcl::PointXYZ> ec;
-    ec.setClusterTolerance (0.01); // 2cm
+    ec.setClusterTolerance (0.02); // 2cm
     ec.setMinClusterSize (1);
     ec.setMaxClusterSize (350);
     //ec.setMinClusterSize (2800);
@@ -651,8 +641,9 @@ void defaultDropPerception(tf::Quaternion* g, geometry_msgs::Pose* dropLocation)
     ec.extract (cluster_indices);
 
     //bool used to determine if default drop must be used
-    bool success = true;
+    bool success = false;
     //int j, incremented through each loop, used to increase number at end of tf frame name, so each has unique name
+    int j = 0;
     std::vector<pcl::PointIndices>::const_iterator it = cluster_indices.begin ();
     for (std::vector<pcl::PointIndices>::const_iterator it = cluster_indices.begin (); it != cluster_indices.end (); ++it) {
         //loop unil no new cluster found
@@ -697,6 +688,7 @@ void defaultDropPerception(tf::Quaternion* g, geometry_msgs::Pose* dropLocation)
                 minyX = cloud_cluster->points[p].x;
             }
         }
+        success = true;
         //.29 is width of table area cut out, if length is this large, than the table was detected, and not a block
         if((maxy-miny) >=.29){
             success = false;
@@ -706,11 +698,13 @@ void defaultDropPerception(tf::Quaternion* g, geometry_msgs::Pose* dropLocation)
         y = y / num_points;
         z = z / num_points;
         x = x / num_points;
+
         double result = 0;
         double slope;
+        // find distance from miny to minx and minx to maxy (side lengths)
         double lengthOne = sqrt((minyX - minx) * (minyX - minx) + (miny-minxY) * (miny-minxY));
         double  lengthTwo = sqrt((maxyX - minx) * (maxyX - minx) + (maxy-minxY) * (maxy-minxY));
-       // ROS_ERROR("LengthOne = %.2lf\nLengthTwo = %.2lf", lengthOne, lengthTwo);
+        //determine shortest side and calculate the slope of the side
         if(lengthTwo < lengthOne){
             //slope = (miny-minxY)/(minyX - minx);
             slope = -1*(minyX - minx)/(miny-minxY);
@@ -723,6 +717,7 @@ void defaultDropPerception(tf::Quaternion* g, geometry_msgs::Pose* dropLocation)
             //ROS_INFO("%.2lf %.2lf\n%.2lf %.2lf", maxyX, minx, maxy, minxY);
             //ROS_INFO("Slope2 = %.2lf", slope);
         }
+        //use atan slope to get the amount needed to turn in radians
         result = atan(slope);
 
         //test if result is a valid number, if true, set rotation, else, set success to false
@@ -742,6 +737,7 @@ void defaultDropPerception(tf::Quaternion* g, geometry_msgs::Pose* dropLocation)
         dropLocation->orientation.y = g->y();
         dropLocation->orientation.z = g->z();
         dropLocation->orientation.w = g->w();
+        j++;
         break;
     }
 
@@ -758,6 +754,7 @@ void defaultDropPerception(tf::Quaternion* g, geometry_msgs::Pose* dropLocation)
         dropLocation->orientation.z = g->z();
         dropLocation->orientation.w = g->w();
     }
+
     return;
 }
 
@@ -885,24 +882,25 @@ void stackDropPerception(tf::Quaternion* g, geometry_msgs::Pose* dropLocation, d
         y = y / num_points;
         z = z / num_points;
         x = x / num_points;
+
         result = 0;
-        double slope;
+        //find length of lines miny to minx and minx to maxy (two sides)
         double lengthOne = sqrt((minyX - minx) * (minyX - minx) + (miny-minxY) * (miny-minxY));
         double  lengthTwo = sqrt((maxyX - minx) * (maxyX - minx) + (maxy-minxY) * (maxy-minxY));
-        ROS_ERROR("LengthOne = %.2lf\nLengthTwo = %.2lf", lengthOne, lengthTwo);
+
+        //find shortest side and calculate its slope, stored in result
         if(lengthTwo < lengthOne){
             //slope = (miny-minxY)/(minyX - minx);
-            slope = -1*(minyX - minx)/(miny-minxY);
-            ROS_INFO("%.2lf %.2lf\n%.2lf %.2lf", minyX, minx, miny, minxY);
-            ROS_INFO("Slope1 = %.2lf", slope);
+            result = -1*(minyX - minx)/(miny-minxY);
+            //ROS_INFO("%.2lf %.2lf\n%.2lf %.2lf", minyX, minx, miny, minxY);
+            //ROS_INFO("Slope1 = %.2lf", slope);
         }
         else{
             //slope = (maxy-minxY)/(maxyX - minx);
-            slope = -1*(maxyX - minx)/(maxy-minxY);
-            ROS_INFO("%.2lf %.2lf\n%.2lf %.2lf", maxyX, minx, maxy, minxY);
-            ROS_INFO("Slope2 = %.2lf", slope);
+            result = -1*(maxyX - minx)/(maxy-minxY);
+            //ROS_INFO("%.2lf %.2lf\n%.2lf %.2lf", maxyX, minx, maxy, minxY);
+            //ROS_INFO("Slope2 = %.2lf", slope);
         }
-        result = (slope);
 
         tf::Vector3 point2(x, y, z);
         point = point2;
@@ -957,6 +955,7 @@ void stackDropPerception(tf::Quaternion* g, geometry_msgs::Pose* dropLocation, d
         //setup rotation
 
         //test if result (calculated earlier) is a real number after atan
+        //atan of result(slope found earlier) returns the amount needed to turn in radians for the angle
         if(!isnan(atan(result))){
             g->setEulerZYX(atan(result) + 1.57,1.57,0);
         }
