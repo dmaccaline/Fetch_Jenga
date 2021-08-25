@@ -117,10 +117,10 @@ void callback(const sensor_msgs::PointCloud2ConstPtr& input){
 
         double result = 0;
         double slope;
+        // find distance from miny to minx and minx to maxy (side lengths)
         double lengthOne = sqrt((minyX - minx) * (minyX - minx) + (miny-minxY) * (miny-minxY));
         double lengthTwo = sqrt((maxyX - minx) * (maxyX - minx) + (maxy-minxY) * (maxy-minxY));
-        //find shortest side of block, and calculate slope of that side
-       // ROS_ERROR("LengthOne = %.2lf\nLengthTwo = %.2lf", lengthOne, lengthTwo);
+       //determine which side is shorter, and use that side for calculating the angle
         if(lengthTwo > lengthOne){
             //slope = (miny-minxY)/(minyX - minx);
             slope = (minyX - minx)/(miny-minxY);
